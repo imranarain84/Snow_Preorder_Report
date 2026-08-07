@@ -15,8 +15,19 @@ def _require(name: str) -> str:
 class Config:
     def __init__(self):
         self.shiphero_refresh_token = _require("SHIPHERO_REFRESH_TOKEN")
-        self.customer_account_id = _require("SHIPHERO_CUSTOMER_ACCOUNT_ID")
-        self.warehouse_id = _require("SHIPHERO_WAREHOUSE_ID")
+        # Optional: only needed if your ShipHero credentials are for a 3PL
+        # parent account acting on behalf of multiple customers. If your
+        # token is already scoped to a single customer account, leave this
+        # unset and every query naturally returns only that account's data.
+        self.customer_account_id = os.environ.get(
+            "SHIPHERO_CUSTOMER_ACCOUNT_ID", ""
+        ).strip() or None
+        # Optional: only set this if the report should only look at one
+        # warehouse's orders. Leave unset to include orders across every
+        # warehouse on the account.
+        self.warehouse_id = os.environ.get(
+            "SHIPHERO_WAREHOUSE_ID", ""
+        ).strip() or None
 
         self.gmail_client_id = _require("GMAIL_CLIENT_ID")
         self.gmail_client_secret = _require("GMAIL_CLIENT_SECRET")
