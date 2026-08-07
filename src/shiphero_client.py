@@ -60,7 +60,7 @@ class ShipHeroClient:
     # ------------------------------------------------------------------
 
     def get_backordered_orders(
-        self, customer_account_id: str, warehouse_id: str, order_date_from: str
+        self, customer_account_id: Optional[str], warehouse_id: Optional[str], order_date_from: str
     ) -> list[dict]:
         """Returns orders for the client with at least one line item that has
         backorder_quantity > 0. Filters client-side since ShipHero doesn't
@@ -139,7 +139,7 @@ class ShipHeroClient:
     # ------------------------------------------------------------------
 
     def get_open_purchase_order_skus(
-        self, customer_account_id: str, warehouse_id: str
+        self, customer_account_id: Optional[str], warehouse_id: Optional[str]
     ) -> dict[str, list[dict]]:
         """Returns a dict of sku -> list of {po_number, po_id, qty_inbound,
         expected_date} for every open PO line item still awaiting receipt
