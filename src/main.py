@@ -20,21 +20,22 @@ from gmail_client import send_report_email
 
 def run(dry_run: bool = False) -> None:
     cfg = Config()
+    run_started = datetime.now(timezone.utc)
 
     print("Authenticating with ShipHero...")
     access_token = get_access_token(cfg.shiphero_refresh_token, cfg.shiphero_auth_url)
     client = ShipHeroClient(access_token, cfg.shiphero_graphql_url)
 
-    now = datetime.now(timezone.utc)
-    order_date_from = (now - timedelta(days=cfg.lookback_days)).strftime(
+    order_date_from = (run_started - timedelta(days=cfg.lookback_days)).strftime(
         "%Y-%m-%dT%H:%M:%SZ"
     )
 
     print(f"Fetching backordered orders since {order_date_from}...")
-    backordered_orders = client.get_backordered_orders(
+    backordered_orders, total_orders_checked = client.get_backordered_orders(
         cfg.customer_account_id, cfg.warehouse_id, order_date_from
     )
-    print(f"  found {len(backordered_orders)} orders with backordered line items")
+    print(f"  checked {total_orders_checked} orders, "
+          f"{len(backordered_orders)} have backordered line items")
 
     print("Fetching open purchase orders...")
     open_po_skus = client.get_open_purchase_order_skus(
@@ -46,11 +47,13 @@ def run(dry_run: bool = False) -> None:
     print(f"Matched {len(rows)} backordered line item(s) to open POs "
           f"(excluding orders already tagged '{cfg.preorder_tag}')")
 
+    run_finished = datetime.now(timezone.utc)
+    today = run_started.strftime("%Y-%m-%d")
+
     if not rows:
         print("No new pre-order matches today — nothing to email.")
         return
 
-    today = now.strftime("%Y-%m-%d")
     csv_path = Path(f"output/preorder_report_{today}.csv")
     write_csv(rows, csv_path)
     print(f"Wrote CSV to {csv_path}")
@@ -64,11 +67,15 @@ def run(dry_run: bool = False) -> None:
 
     print(f"Emailing report to {cfg.recipients}...")
     body = (
-        f"Daily pre-order report — {today}\n\n"
-        f"{len(order_numbers)} order(s) / {len(rows)} line item(s) are on backorder "
-        f"and covered by an open replenishment PO, but are not yet tagged "
-        f"'{cfg.preorder_tag}' in ShipHero.\n\n"
-        f"Orders: {', '.join(order_numbers)}\n\n"
+        f"=== Snow Commerce — ShipHero Daily PreOrder Summary ===\n"
+        f"Date processed:          {today}\n"
+        f"Run started:             {run_started.strftime('%H:%M:%S UTC')}\n"
+        f"Run finished:            {run_finished.strftime('%H:%M:%S UTC')}\n"
+        f"Total orders checked:    {total_orders_checked}\n"
+        f"Total backorders found:  {len(backordered_orders)}\n"
+        f"Matched to open POs:     {len(rows)} line item(s) across {len(order_numbers)} order(s)\n"
+        f"\n"
+        f"None of these orders are yet tagged '{cfg.preorder_tag}' in ShipHero.\n"
         f"Full detail attached as CSV."
     )
     send_report_email(
