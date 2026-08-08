@@ -23,10 +23,14 @@ class ShipHeroClient:
             }
         )
 
-    def _post(self, query: str, variables: Optional[dict] = None, max_retries: int = 5) -> dict:
+    def _post(self, query: str, variables: Optional[dict] = None, max_retries: int = 30) -> dict:
         """POST a GraphQL query, retrying with backoff if ShipHero throttles us
         for not having enough credits yet (code 30). ShipHero tells us exactly
         how long to wait, so we trust that instead of guessing.
+
+        max_retries is generous (30) because on accounts with real production
+        traffic, the credit pool is shared with everything else hitting the
+        API — it can take a while for a large enough window to open up.
         """
         for attempt in range(max_retries + 1):
             resp = self.session.post(
@@ -45,11 +49,12 @@ class ShipHeroClient:
                     wait_seconds = self._parse_wait_seconds(
                         throttle_error.get("time_remaining", "5 seconds")
                     )
-                    print(
-                        f"  ShipHero credit limit hit (need {throttle_error.get('required_credits')}, "
-                        f"have {throttle_error.get('remaining_credits')}) — "
-                        f"waiting {wait_seconds}s before retrying..."
-                    )
+                    if attempt % 5 == 0:  # don't spam the log every single retry
+                        print(
+                            f"  ShipHero credit limit hit (need {throttle_error.get('required_credits')}, "
+                            f"have {throttle_error.get('remaining_credits')}) — "
+                            f"waiting {wait_seconds}s before retrying (attempt {attempt + 1}/{max_retries})..."
+                        )
                     time.sleep(wait_seconds + 2)
                     continue
                 raise RuntimeError(f"ShipHero GraphQL error: {errors}")
@@ -96,7 +101,7 @@ class ShipHeroClient:
           orders({", ".join(args)}) {{
             request_id
             complexity
-            data(first: 10, after: $after) {{
+            data(first: 5, after: $after) {{
               pageInfo {{ hasNextPage endCursor }}
               edges {{
                 node {{
@@ -108,7 +113,7 @@ class ShipHeroClient:
                   account_id
                   email
                   tags
-                  line_items(first: 20) {{
+                  line_items(first: 10) {{
                     edges {{
                       node {{
                         id
@@ -182,7 +187,7 @@ class ShipHeroClient:
           purchase_orders{args_clause} {{
             request_id
             complexity
-            data(first: 10, after: $after) {{
+            data(first: 5, after: $after) {{
               pageInfo {{ hasNextPage endCursor }}
               edges {{
                 node {{
@@ -190,7 +195,7 @@ class ShipHeroClient:
                   po_number
                   fulfillment_status
                   po_date
-                  line_items(first: 30) {{
+                  line_items(first: 15) {{
                     edges {{
                       node {{
                         sku
