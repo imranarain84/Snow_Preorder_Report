@@ -23,9 +23,12 @@ class ShipHeroClient:
             }
         )
 
-    def _post(self, query: str, variables: Optional[dict] = None) -> dict:
-        """POST a GraphQL query, retrying once if throttled."""
-        for attempt in range(2):
+    def _post(self, query: str, variables: Optional[dict] = None, max_retries: int = 5) -> dict:
+        """POST a GraphQL query, retrying with backoff if ShipHero throttles us
+        for not having enough credits yet (code 30). ShipHero tells us exactly
+        how long to wait, so we trust that instead of guessing.
+        """
+        for attempt in range(max_retries + 1):
             resp = self.session.post(
                 self.graphql_url,
                 json={"query": query, "variables": variables or {}},
@@ -38,17 +41,22 @@ class ShipHeroClient:
                 throttle_error = next(
                     (e for e in errors if e.get("code") == 30), None
                 )
-                if throttle_error and attempt == 0:
+                if throttle_error and attempt < max_retries:
                     wait_seconds = self._parse_wait_seconds(
                         throttle_error.get("time_remaining", "5 seconds")
                     )
-                    time.sleep(min(wait_seconds, 90) + 1)
+                    print(
+                        f"  ShipHero credit limit hit (need {throttle_error.get('required_credits')}, "
+                        f"have {throttle_error.get('remaining_credits')}) — "
+                        f"waiting {wait_seconds}s before retrying..."
+                    )
+                    time.sleep(wait_seconds + 2)
                     continue
                 raise RuntimeError(f"ShipHero GraphQL error: {errors}")
 
             return body["data"]
 
-        raise RuntimeError("ShipHero GraphQL request failed after retry")
+        raise RuntimeError("ShipHero GraphQL request failed after retries")
 
     @staticmethod
     def _parse_wait_seconds(time_remaining: str) -> int:
@@ -75,7 +83,7 @@ class ShipHeroClient:
                  fulfillment_status: "pending") {
             request_id
             complexity
-            data(first: 50, after: $after) {
+            data(first: 10, after: $after) {
               pageInfo { hasNextPage endCursor }
               edges {
                 node {
@@ -87,7 +95,7 @@ class ShipHeroClient:
                   account_id
                   email
                   tags
-                  line_items(first: 50) {
+                  line_items(first: 20) {
                     edges {
                       node {
                         id
@@ -151,7 +159,7 @@ class ShipHeroClient:
                            warehouse_id: $warehouse_id) {
             request_id
             complexity
-            data(first: 50, after: $after) {
+            data(first: 10, after: $after) {
               pageInfo { hasNextPage endCursor }
               edges {
                 node {
@@ -159,7 +167,7 @@ class ShipHeroClient:
                   po_number
                   fulfillment_status
                   po_date
-                  line_items(first: 100) {
+                  line_items(first: 30) {
                     edges {
                       node {
                         sku
