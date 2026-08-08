@@ -73,20 +73,33 @@ class ShipHeroClient:
         """Returns orders for the client with at least one line item that has
         backorder_quantity > 0. Filters client-side since ShipHero doesn't
         expose a single 'backorder' fulfillment_status to filter on.
+
+        customer_account_id / warehouse_id are left out of the query
+        entirely when not provided — ShipHero's API rejects an explicit
+        null for these rather than treating it as "don't filter."
         """
-        query = """
-        query BackorderedOrders($customer_account_id: String, $warehouse_id: String,
-                                 $order_date_from: ISODateTime, $after: String) {
-          orders(customer_account_id: $customer_account_id,
-                 warehouse_id: $warehouse_id,
-                 order_date_from: $order_date_from,
-                 fulfillment_status: "pending") {
+        var_decls = ["$order_date_from: ISODateTime", "$after: String"]
+        args = ['order_date_from: $order_date_from', 'fulfillment_status: "pending"']
+        variables: dict = {"order_date_from": order_date_from}
+
+        if customer_account_id:
+            var_decls.append("$customer_account_id: String")
+            args.append("customer_account_id: $customer_account_id")
+            variables["customer_account_id"] = customer_account_id
+        if warehouse_id:
+            var_decls.append("$warehouse_id: String")
+            args.append("warehouse_id: $warehouse_id")
+            variables["warehouse_id"] = warehouse_id
+
+        query = f"""
+        query BackorderedOrders({", ".join(var_decls)}) {{
+          orders({", ".join(args)}) {{
             request_id
             complexity
-            data(first: 10, after: $after) {
-              pageInfo { hasNextPage endCursor }
-              edges {
-                node {
+            data(first: 10, after: $after) {{
+              pageInfo {{ hasNextPage endCursor }}
+              edges {{
+                node {{
                   id
                   legacy_id
                   order_number
@@ -95,36 +108,29 @@ class ShipHeroClient:
                   account_id
                   email
                   tags
-                  line_items(first: 20) {
-                    edges {
-                      node {
+                  line_items(first: 20) {{
+                    edges {{
+                      node {{
                         id
                         sku
                         product_name
                         quantity
                         quantity_allocated
                         backorder_quantity
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+                      }}
+                    }}
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
         """
         orders = []
         after = None
         while True:
-            data = self._post(
-                query,
-                {
-                    "customer_account_id": customer_account_id,
-                    "warehouse_id": warehouse_id,
-                    "order_date_from": order_date_from,
-                    "after": after,
-                },
-            )
+            variables["after"] = after
+            data = self._post(query, variables)
             page = data["orders"]["data"]
             for edge in page["edges"]:
                 node = edge["node"]
@@ -152,47 +158,58 @@ class ShipHeroClient:
         """Returns a dict of sku -> list of {po_number, po_id, qty_inbound,
         expected_date} for every open PO line item still awaiting receipt
         (quantity > quantity_received).
+
+        customer_account_id / warehouse_id are left out of the query
+        entirely when not provided — same reasoning as get_backordered_orders.
         """
-        query = """
-        query OpenPOs($customer_account_id: String, $warehouse_id: String, $after: String) {
-          purchase_orders(customer_account_id: $customer_account_id,
-                           warehouse_id: $warehouse_id) {
+        var_decls = ["$after: String"]
+        args = []
+        variables: dict = {}
+
+        if customer_account_id:
+            var_decls.append("$customer_account_id: String")
+            args.append("customer_account_id: $customer_account_id")
+            variables["customer_account_id"] = customer_account_id
+        if warehouse_id:
+            var_decls.append("$warehouse_id: String")
+            args.append("warehouse_id: $warehouse_id")
+            variables["warehouse_id"] = warehouse_id
+
+        args_clause = f"({', '.join(args)})" if args else ""
+
+        query = f"""
+        query OpenPOs({", ".join(var_decls)}) {{
+          purchase_orders{args_clause} {{
             request_id
             complexity
-            data(first: 10, after: $after) {
-              pageInfo { hasNextPage endCursor }
-              edges {
-                node {
+            data(first: 10, after: $after) {{
+              pageInfo {{ hasNextPage endCursor }}
+              edges {{
+                node {{
                   id
                   po_number
                   fulfillment_status
                   po_date
-                  line_items(first: 30) {
-                    edges {
-                      node {
+                  line_items(first: 30) {{
+                    edges {{
+                      node {{
                         sku
                         quantity
                         quantity_received
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
+                      }}
+                    }}
+                  }}
+                }}
+              }}
+            }}
+          }}
+        }}
         """
         sku_map: dict[str, list[dict]] = {}
         after = None
         while True:
-            data = self._post(
-                query,
-                {
-                    "customer_account_id": customer_account_id,
-                    "warehouse_id": warehouse_id,
-                    "after": after,
-                },
-            )
+            variables["after"] = after
+            data = self._post(query, variables)
             page = data["purchase_orders"]["data"]
             for edge in page["edges"]:
                 po = edge["node"]
