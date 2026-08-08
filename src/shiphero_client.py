@@ -74,10 +74,14 @@ class ShipHeroClient:
 
     def get_backordered_orders(
         self, customer_account_id: Optional[str], warehouse_id: Optional[str], order_date_from: str
-    ) -> list[dict]:
-        """Returns orders for the client with at least one line item that has
+    ) -> tuple[list[dict], int]:
+        """Returns (orders, total_orders_scanned).
+
+        orders = every order with at least one line item that has
         backorder_quantity > 0. Filters client-side since ShipHero doesn't
         expose a single 'backorder' fulfillment_status to filter on.
+        total_orders_scanned = every pending order examined, regardless of
+        whether it had a backordered item, so the report can show scale.
 
         customer_account_id / warehouse_id are left out of the query
         entirely when not provided — ShipHero's API rejects an explicit
@@ -132,6 +136,7 @@ class ShipHeroClient:
         }}
         """
         orders = []
+        total_scanned = 0
         after = None
         while True:
             variables["after"] = after
@@ -139,6 +144,7 @@ class ShipHeroClient:
             page = data["orders"]["data"]
             for edge in page["edges"]:
                 node = edge["node"]
+                total_scanned += 1
                 backordered_items = [
                     li["node"]
                     for li in node["line_items"]["edges"]
@@ -151,7 +157,7 @@ class ShipHeroClient:
                 after = page["pageInfo"]["endCursor"]
             else:
                 break
-        return orders
+        return orders, total_scanned
 
     # ------------------------------------------------------------------
     # Purchase Orders
