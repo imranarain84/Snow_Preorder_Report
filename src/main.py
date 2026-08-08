@@ -7,7 +7,7 @@ Usage:
 """
 import argparse
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config import Config
@@ -25,9 +25,10 @@ def run(dry_run: bool = False) -> None:
     access_token = get_access_token(cfg.shiphero_refresh_token, cfg.shiphero_auth_url)
     client = ShipHeroClient(access_token, cfg.shiphero_graphql_url)
 
-    order_date_from = (
-        datetime.utcnow() - timedelta(days=cfg.lookback_days)
-    ).strftime("%Y-%m-%d")
+    now = datetime.now(timezone.utc)
+    order_date_from = (now - timedelta(days=cfg.lookback_days)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
     print(f"Fetching backordered orders since {order_date_from}...")
     backordered_orders = client.get_backordered_orders(
@@ -49,7 +50,7 @@ def run(dry_run: bool = False) -> None:
         print("No new pre-order matches today — nothing to email.")
         return
 
-    today = datetime.utcnow().strftime("%Y-%m-%d")
+    today = now.strftime("%Y-%m-%d")
     csv_path = Path(f"output/preorder_report_{today}.csv")
     write_csv(rows, csv_path)
     print(f"Wrote CSV to {csv_path}")
