@@ -68,7 +68,7 @@ class ShipHeroClient:
         """
         query = """
         query BackorderedOrders($customer_account_id: String, $warehouse_id: String,
-                                 $order_date_from: String, $after: String) {
+                                 $order_date_from: ISODateTime, $after: String) {
           orders(customer_account_id: $customer_account_id,
                  warehouse_id: $warehouse_id,
                  order_date_from: $order_date_from,
