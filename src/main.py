@@ -1,9 +1,11 @@
-"""Daily pre-order report: finds backordered orders covered by an open PO,
-writes a CSV, tags the orders in ShipHero, and emails the CSV out.
+"""Daily backorder-without-PO report: finds backordered orders where the
+SKU has NO open replenishment PO at all, limited to SKUs affecting fewer
+than a threshold number of orders (bigger, known stockouts are excluded).
+Writes a CSV and emails it out.
 
 Usage:
     python src/main.py             # full run
-    python src/main.py --dry-run   # writes CSV, prints what it WOULD tag/email
+    python src/main.py --dry-run   # writes CSV, prints what it WOULD email
 """
 import argparse
 import sys
@@ -13,7 +15,7 @@ from pathlib import Path
 from config import Config
 from shiphero_auth import get_access_token
 from shiphero_client import ShipHeroClient
-from matcher import find_preorder_matches
+from matcher import find_no_po_matches
 from csv_export import write_csv
 from gmail_client import send_report_email
 
@@ -43,15 +45,18 @@ def run(dry_run: bool = False) -> None:
     )
     print(f"  found {len(open_po_skus)} SKUs with inbound replenishment")
 
-    rows = find_preorder_matches(backordered_orders, open_po_skus, cfg.preorder_tag)
-    print(f"Matched {len(rows)} backordered line item(s) to open POs "
-          f"(excluding orders already tagged '{cfg.preorder_tag}')")
+    rows = find_no_po_matches(
+        backordered_orders, open_po_skus, cfg.preorder_tag, cfg.max_orders_per_sku
+    )
+    print(f"Found {len(rows)} backordered line item(s) with no open PO "
+          f"(excluding SKUs with {cfg.max_orders_per_sku}+ affected orders, "
+          f"and orders already tagged '{cfg.preorder_tag}')")
 
     run_finished = datetime.now(timezone.utc)
     today = run_started.strftime("%Y-%m-%d")
 
     if not rows:
-        print("No new pre-order matches today — nothing to email.")
+        print("No matches today — nothing to email.")
         return
 
     csv_path = Path(f"output/preorder_report_{today}.csv")
@@ -59,10 +64,11 @@ def run(dry_run: bool = False) -> None:
     print(f"Wrote CSV to {csv_path}")
 
     order_numbers = sorted({row["order_number"] for row in rows})
+    skus_included = sorted({row["sku"] for row in rows})
 
     if dry_run:
         print(f"[dry-run] Would email CSV to: {cfg.recipients}")
-        print(f"[dry-run] Orders in report: {order_numbers}")
+        print(f"[dry-run] SKUs in report: {skus_included}")
         return
 
     print(f"Emailing report to {cfg.recipients}...")
@@ -73,9 +79,14 @@ def run(dry_run: bool = False) -> None:
         f"Run finished:            {run_finished.strftime('%H:%M:%S UTC')}\n"
         f"Total orders checked:    {total_orders_checked}\n"
         f"Total backorders found:  {len(backordered_orders)}\n"
-        f"Matched to open POs:     {len(rows)} line item(s) across {len(order_numbers)} order(s)\n"
+        f"No open PO, under threshold ({cfg.max_orders_per_sku}): "
+        f"{len(rows)} line item(s), {len(skus_included)} SKU(s), "
+        f"{len(order_numbers)} order(s)\n"
         f"\n"
-        f"None of these orders are yet tagged '{cfg.preorder_tag}' in ShipHero.\n"
+        f"These are backordered items with NO replenishment PO in place at "
+        f"all, limited to SKUs affecting fewer than {cfg.max_orders_per_sku} "
+        f"orders (larger-volume stockouts are assumed already known/handled "
+        f"and are excluded).\n"
         f"Full detail attached as CSV."
     )
     send_report_email(
