@@ -45,12 +45,18 @@ def run(dry_run: bool = False) -> None:
     )
     print(f"  found {len(open_po_skus)} SKUs with inbound replenishment")
 
-    rows = find_no_po_matches(
+    rows, breakdown = find_no_po_matches(
         backordered_orders, open_po_skus, cfg.preorder_tag, cfg.max_orders_per_sku
     )
-    print(f"Found {len(rows)} backordered line item(s) with no open PO "
-          f"(excluding SKUs with {cfg.max_orders_per_sku}+ affected orders, "
-          f"and orders already tagged '{cfg.preorder_tag}')")
+    print(
+        f"Line items: {breakdown['total_line_items']} total backordered -> "
+        f"{breakdown['skipped_has_open_po']} have an open PO (skipped) -> "
+        f"{breakdown['skipped_already_tagged']} already tagged '{cfg.preorder_tag}' (skipped) -> "
+        f"{breakdown['line_items_excluded_over_threshold']} on SKUs with "
+        f"{cfg.max_orders_per_sku}+ affected orders across "
+        f"{breakdown['skus_excluded_over_threshold']} SKU(s) (skipped) -> "
+        f"{breakdown['line_items_in_report']} remain in report"
+    )
 
     run_finished = datetime.now(timezone.utc)
     today = run_started.strftime("%Y-%m-%d")
@@ -78,15 +84,8 @@ def run(dry_run: bool = False) -> None:
         f"Run started:             {run_started.strftime('%H:%M:%S UTC')}\n"
         f"Run finished:            {run_finished.strftime('%H:%M:%S UTC')}\n"
         f"Total orders checked:    {total_orders_checked}\n"
-        f"Total backorders found:  {len(backordered_orders)}\n"
-        f"No open PO, under threshold ({cfg.max_orders_per_sku}): "
-        f"{len(rows)} line item(s), {len(skus_included)} SKU(s), "
-        f"{len(order_numbers)} order(s)\n"
+        f"Total backorders found:  {len(rows)}\n"
         f"\n"
-        f"These are backordered items with NO replenishment PO in place at "
-        f"all, limited to SKUs affecting fewer than {cfg.max_orders_per_sku} "
-        f"orders (larger-volume stockouts are assumed already known/handled "
-        f"and are excluded).\n"
         f"Full detail attached as CSV."
     )
     send_report_email(
@@ -95,7 +94,7 @@ def run(dry_run: bool = False) -> None:
         refresh_token=cfg.gmail_refresh_token,
         sender=cfg.gmail_sender_email,
         recipients=cfg.recipients,
-        subject=f"Pre-Order Report — {today}",
+        subject=f"Vertical Passage x Snow Commerce: Pre-Order Report - {today}",
         body_text=body,
         csv_path=csv_path,
     )
