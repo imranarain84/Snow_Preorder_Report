@@ -1,4 +1,4 @@
-"""Writes matched pre-order rows to a CSV file."""
+"""Writes backordered-with-no-PO rows to a CSV file."""
 import csv
 from pathlib import Path
 
@@ -9,11 +9,8 @@ FIELDNAMES = [
     "sku",
     "product_name",
     "qty_backordered",
-    "po_number",
-    "po_date",
-    "qty_inbound_on_po",
+    "orders_affected_for_sku",
     "order_id",
-    "po_id",
 ]
 
 
