@@ -1,7 +1,8 @@
 """Daily backorder-without-PO report: finds backordered orders where the
 SKU has NO open replenishment PO at all, limited to SKUs affecting fewer
 than a threshold number of orders (bigger, known stockouts are excluded).
-Writes a CSV and emails it out.
+Also looks up the live "On Order" quantity per SKU as an informational
+column. Writes a CSV and emails it out.
 
 Usage:
     python src/main.py             # full run
@@ -65,12 +66,20 @@ def run(dry_run: bool = False) -> None:
         print("No matches today — nothing to email.")
         return
 
+    skus_included = sorted({row["sku"] for row in rows})
+    print(f"Looking up live 'On Order' quantity for {len(skus_included)} SKU(s)...")
+    on_order_by_sku = {
+        sku: client.get_on_order_quantity(sku, cfg.warehouse_id)
+        for sku in skus_included
+    }
+    for row in rows:
+        row["on_order"] = on_order_by_sku[row["sku"]]
+
     csv_path = Path(f"output/preorder_report_{today}.csv")
     write_csv(rows, csv_path)
     print(f"Wrote CSV to {csv_path}")
 
     order_numbers = sorted({row["order_number"] for row in rows})
-    skus_included = sorted({row["sku"] for row in rows})
 
     if dry_run:
         print(f"[dry-run] Would email CSV to: {cfg.recipients}")
