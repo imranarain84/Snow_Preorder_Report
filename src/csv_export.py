@@ -10,6 +10,7 @@ FIELDNAMES = [
     "product_name",
     "qty_backordered",
     "orders_affected_for_sku",
+    "on_order",
     "order_id",
 ]
 
