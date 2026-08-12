@@ -245,3 +245,75 @@ class ShipHeroClient:
             else:
                 break
         return sku_map
+
+    # ------------------------------------------------------------------
+    # On-order lookup (per SKU, for the small final report list only)
+    # ------------------------------------------------------------------
+
+    def get_on_order_quantity(self, sku: str, warehouse_id: Optional[str]) -> int:
+        """Returns the same "On Order" number ShipHero shows on the product
+        page: the sum of (quantity - quantity_received - quantity_rejected)
+        across all inbound PO line items for this SKU, floored at 0 per
+        inbound. If warehouse_id is set, only that warehouse's inbounds are
+        counted; otherwise all warehouses on the account are summed.
+
+        Called once per SKU in the final report (a short list), not for
+        every SKU in the account — so this stays cheap even without a
+        warehouse filter.
+
+        Fetches only the first 50 inbound line items per warehouse_product.
+        That's enough headroom for this use case (a handful of open PO
+        line items per SKU); if a SKU ever has more than that on one
+        warehouse, a warning prints rather than silently under-counting.
+        """
+        query = """
+        query ProductOnOrder($sku: String!) {
+          product(sku: $sku) {
+            request_id
+            complexity
+            data {
+              sku
+              warehouse_products {
+                warehouse_id
+                inbounds(first: 50) {
+                  pageInfo { hasNextPage }
+                  edges {
+                    node {
+                      quantity
+                      quantity_received
+                      quantity_rejected
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+        """
+        data = self._post(query, {"sku": sku})
+        product_data = data.get("product", {}).get("data")
+        if not product_data:
+            return 0  # SKU not found — shouldn't normally happen
+
+        total_on_order = 0
+        for wp in product_data.get("warehouse_products") or []:
+            if warehouse_id and wp.get("warehouse_id") != warehouse_id:
+                continue
+            inbounds = wp.get("inbounds") or {}
+            for edge in inbounds.get("edges", []):
+                node = edge["node"]
+                outstanding = (
+                    (node.get("quantity") or 0)
+                    - (node.get("quantity_received") or 0)
+                    - (node.get("quantity_rejected") or 0)
+                )
+                if outstanding > 0:
+                    total_on_order += outstanding
+            if inbounds.get("pageInfo", {}).get("hasNextPage"):
+                print(
+                    f"  WARNING: SKU {sku} has more than 50 open inbound "
+                    f"line items on one warehouse — on_order count may be "
+                    f"understated."
+                )
+
+        return total_on_order
