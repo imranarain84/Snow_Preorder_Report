@@ -103,7 +103,7 @@ def run(dry_run: bool = False) -> None:
         refresh_token=cfg.gmail_refresh_token,
         sender=cfg.gmail_sender_email,
         recipients=cfg.recipients,
-        subject=f"Vertical Passage x Snow Commerce: Pre-Order Report - {today}",
+        subject=f"Vertical Passage x Snow Commerce: Backordered Sales Report - {today}",
         body_text=body,
         csv_path=csv_path,
     )
