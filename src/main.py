@@ -75,7 +75,7 @@ def run(dry_run: bool = False) -> None:
     for row in rows:
         row["on_order"] = on_order_by_sku[row["sku"]]
 
-    csv_path = Path(f"output/preorder_report_{today}.csv")
+    csv_path = Path(f"output/backordered_report_{today}.csv")
     write_csv(rows, csv_path)
     print(f"Wrote CSV to {csv_path}")
 
@@ -88,7 +88,7 @@ def run(dry_run: bool = False) -> None:
 
     print(f"Emailing report to {cfg.recipients}...")
     body = (
-        f"=== Snow Commerce — ShipHero Daily PreOrder Summary ===\n"
+        f"=== Snow Commerce — ShipHero Daily Backorder Summary ===\n"
         f"Date processed:          {today}\n"
         f"Run started:             {run_started.strftime('%H:%M:%S UTC')}\n"
         f"Run finished:            {run_finished.strftime('%H:%M:%S UTC')}\n"
@@ -103,7 +103,7 @@ def run(dry_run: bool = False) -> None:
         refresh_token=cfg.gmail_refresh_token,
         sender=cfg.gmail_sender_email,
         recipients=cfg.recipients,
-        subject=f"Vertical Passage x Snow Commerce: Backordered Sales Report - {today}",
+        subject=f"Vertical Passage x Snow Commerce: Backorder Report - {today}",
         body_text=body,
         csv_path=csv_path,
     )
